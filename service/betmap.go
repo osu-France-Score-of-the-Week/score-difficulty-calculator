@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"score-difficulty-calculator/models"
 )
 
 func (s *OsuService) GetBeatmapAttributes(id int, mods []string, token string) (models.BeatmapAttributes, error) {
+	// Cache lookup — skip the API call when the entry is already stored.
+	if attrs, ok := s.Cache.Get(id, mods); ok {
+		log.Printf("cache hit: beatmap %d mods %v\n", id, mods)
+		return attrs, nil
+	}
+
 	client := &http.Client{}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -57,6 +64,11 @@ func (s *OsuService) GetBeatmapAttributes(id int, mods []string, token string) (
 	var response models.BeatmapAttributesResponse
 	if err := json.Unmarshal(respBody, &response); err != nil {
 		return models.BeatmapAttributes{}, err
+	}
+
+	// Persist the freshly fetched attributes so future calls are served from cache.
+	if err := s.Cache.Set(id, mods, response.Attributes); err != nil {
+		log.Printf("cache set failed for beatmap %d: %v\n", id, err)
 	}
 
 	return response.Attributes, nil
