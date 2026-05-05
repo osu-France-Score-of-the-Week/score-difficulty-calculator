@@ -8,18 +8,10 @@ import (
 	"os"
 	"score-difficulty-calculator/models"
 	"strings"
-	"time"
 )
 
-type OsuService struct {
-}
-
-func NewOsuService() *OsuService {
-	return &OsuService{}
-}
-
 func (s *OsuService) Authenticate() (models.OAuthResponse, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{}
 
 	clientID := os.Getenv("OSU_CLIENT_ID")
 	clientSecret := os.Getenv("OSU_CLIENT_SECRET")

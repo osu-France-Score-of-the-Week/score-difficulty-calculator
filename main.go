@@ -29,4 +29,13 @@ func main() {
 
 	token := authResponse.AccessToken
 	fmt.Println(token)
+
+	ranking, err := osuService.GetRanking(token)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Printf("Fetched %d players from osu API\n", len(ranking.Ranking))
+
 }
