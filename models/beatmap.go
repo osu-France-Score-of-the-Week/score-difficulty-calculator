@@ -5,8 +5,12 @@ type Beatmap struct {
 	Version string `json:"version"`
 }
 
+type BeatmapAttributesResponse struct {
+	Attributes BeatmapAttributes `json:"attributes"`
+}
+
 type BeatmapAttributes struct {
-	Difficulty                float64 `json:"difficulty"`
+	StarRating                float64 `json:"star_rating"`
 	MaxCombo                  int     `json:"max_combo"`
 	AimDifficulty             float64 `json:"aim_difficulty"`
 	AimDifficultySliderCount  float64 `json:"aim_difficulty_slider_count"`

@@ -45,4 +45,12 @@ func main() {
 	}
 
 	fmt.Printf("Fetched %d scores from osu API\n", len(scores))
+
+	attributes, err := osuService.GetBeatmapAttributes(scores[0].Beatmap.ID, scores[0].Mods, token)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Printf("Fetched beatmap attributes: %+v\n", attributes)
 }
