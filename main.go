@@ -37,5 +37,12 @@ func main() {
 	}
 
 	fmt.Printf("Fetched %d players from osu API\n", len(ranking.Ranking))
+	fmt.Printf("First player: %s\n", ranking.Ranking[0].User.Username)
+	scores, err := osuService.GetUserTopScores(ranking.Ranking[0].User.ID, token)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
+	fmt.Printf("Fetched %d scores from osu API\n", len(scores))
 }

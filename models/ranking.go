@@ -1,7 +1,11 @@
 package models
 
 type Ranking struct {
-	Ranking RankingItems `json:"ranking"`
+	Ranking []UserStatistics `json:"ranking"`
 }
 
-type RankingItems []User
+type UserStatistics struct {
+	PP         float64 `json:"pp"`
+	GlobalRank int     `json:"global_rank"`
+	User       User    `json:"user"`
+}
