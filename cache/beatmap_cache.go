@@ -13,8 +13,9 @@ import (
 
 // CacheEntry represents a single cached beatmap + mod combination.
 type CacheEntry struct {
-	BeatmapID int
-	Mods      []string
+	BeatmapID  int
+	Mods       []string
+	Attributes models.BeatmapAttributes
 }
 
 // BeatmapCache is a thread-safe, file-backed cache for BeatmapAttributes.
@@ -87,7 +88,7 @@ func (c *BeatmapCache) GetAll() []CacheEntry {
 		if len(parts) == 2 && parts[1] != "" {
 			mods = strings.Split(parts[1], ",")
 		}
-		entries = append(entries, CacheEntry{BeatmapID: id, Mods: mods})
+		entries = append(entries, CacheEntry{BeatmapID: id, Mods: mods, Attributes: c.data[key]})
 	}
 	return entries
 }

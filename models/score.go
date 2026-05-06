@@ -1,14 +1,15 @@
 package models
 
 type Score struct {
-	ID         int        `json:"id"`
-	Accuracy   float64    `json:"accuracy"`
-	PP         float64    `json:"pp"`
-	Rank       string     `json:"rank"`
-	Beatmap    Beatmap    `json:"beatmap"`
-	BeatmapSet BeatmapSet `json:"beatmap_set"`
-	User       User       `json:"user"`
-	Mods       []string   `json:"mods"`
+	ID         int             `json:"id"`
+	Accuracy   float64         `json:"accuracy"`
+	PP         float64         `json:"pp"`
+	Rank       string          `json:"rank"`
+	Beatmap    Beatmap         `json:"beatmap"`
+	BeatmapSet BeatmapSet      `json:"beatmapset"`
+	User       User            `json:"user"`
+	Mods       []string        `json:"mods"`
+	Statistics ScoreStatistics `json:"statistics"`
 }
 
 type ScoreStatistics struct {
