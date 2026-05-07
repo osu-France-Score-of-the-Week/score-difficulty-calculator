@@ -3,6 +3,7 @@ package models
 type Beatmap struct {
 	ID      int    `json:"id"`
 	Version string `json:"version"`
+	Status  string `json:"status"`
 }
 
 type BeatmapAttributesResponse struct {
