@@ -10,12 +10,13 @@ import (
 // favoured over the weaker one when combining them into a single map score.
 // p=2 (L2/Euclidean) is already more peak-biased than simple addition;
 // raise p to accentuate the effect further (p=3, 4, …).
-const NormP = 1.65
+const NormP = 1.2
 
 // MissPenaltyFactor controls how harshly misses reduce the final score.
-// divisor = 1 + MissPenaltyFactor * log10(missCount + 1)
-// Lower values = softer penalty. 0 = no penalty at all.
-const MissPenaltyFactor = 0.4
+// divisor = 1 + MissPenaltyFactor * sqrt(missCount)
+// sqrt grows faster than log10 for large miss counts (more linear feel)
+// while still being gentle for 1-2 misses. Lower values = softer penalty.
+const MissPenaltyFactor = 0.1
 
 // AccuracyPower controls how harshly low accuracy is penalized.
 // Higher values widen the gap between e.g. 95% and 99% accuracy.
@@ -25,33 +26,92 @@ const AccuracyPower = 0.9
 // Lower values = increase slider influence in score calculation
 const SliderFactor = 1
 
+const CSThreshold = 6.5
+const CSMaxMultiplier = 1.3
+
+const HighARThreshold = 10.5
+const HighARMultiplier = 1
+
+const LowARThreshold = 8
+const LowARMultiplier = 2
+
+const ODThreshold = 9
+const ODMaxMultiplier = 1.3
+
+const SpeedMultiplier = 0.75
+
+const AimMultiplier = 1
+
 type ScoreResult struct {
-	AimScore     float64
-	SpeedScore   float64
-	MapScore     float64
-	AccMult      float64
-	MissPenalty  float64
-	SliderFactor float64
-	FinalScore   float64
-	MissCount    int
+	AimScore    float64
+	SpeedScore  float64
+	MapScore    float64
+	AccMult     float64
+	MissPenalty float64
+	ARMult      float64
+	EffectiveAR float64
+	EffectiveOD float64
+	FinalScore  float64
+	MissCount   int
+}
+
+// arMult returns a bonus multiplier based on effective AR.
+// High AR (> HighARThreshold): harder to read → bonus up to HighARMultiplier at AR 11.
+// Low AR  (< LowARThreshold):  cluttered screen → bonus up to LowARMultiplier at AR 0.
+func computeARMult(ar float64) float64 {
+	mult := 1.0
+	if ar > HighARThreshold {
+		t := (ar - HighARThreshold) / (11.0 - HighARThreshold)
+		mult += t * (HighARMultiplier - 1)
+	} else if ar < LowARThreshold {
+		t := (LowARThreshold - ar) / LowARThreshold
+		mult += t * (LowARMultiplier - 1)
+	}
+	return mult
+}
+
+// effectiveAccPower returns AccuracyPower adjusted for OD.
+// Low OD = easier to acc → increase power (penalize bad accuracy more).
+// OD at or above ODThreshold → neutral (AccuracyPower unchanged).
+func effectiveAccPower(od float64) float64 {
+	if od < ODThreshold {
+		t := (ODThreshold - od) / ODThreshold
+		return AccuracyPower * (1 + t*(ODMaxMultiplier-1))
+	}
+	return AccuracyPower
 }
 
 func ComputeMapScore(beatmapID int, mods []string, attributes models.BeatmapAttributes) float64 {
-	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Log10(attributes.AimDifficultStrainCount)
-	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Log10(attributes.SpeedDifficultStrainCount/2)
+	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Log10(attributes.AimDifficultStrainCount) * AimMultiplier
+	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Log10(attributes.SpeedDifficultStrainCount) * SpeedMultiplier
 	return 10.0 * math.Pow(math.Pow(aimScore, NormP)+math.Pow(speedScore, NormP), 1.0/NormP)
 }
 
 func ComputeDetailed(attributes models.BeatmapAttributes, score models.Score) ScoreResult {
-	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Log10(attributes.AimDifficultStrainCount)
-	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Log10(attributes.SpeedDifficultStrainCount/2)
+	scoreCS := CalculateCSForMod(score.Beatmap, score.Mods)
+	scoreOD := CalculateODForMod(score.Beatmap, score.Mods)
+	scoreAR := CalculateARForMod(score.Beatmap, score.Mods)
+
+	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Log10(attributes.AimDifficultStrainCount) * AimMultiplier
+	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Log10(attributes.SpeedDifficultStrainCount) * SpeedMultiplier
 	mapScore := 10.0 * math.Pow(math.Pow(aimScore, NormP)+math.Pow(speedScore, NormP), 1.0/NormP)
 
+	// CS bonus
+	if scoreCS >= CSThreshold {
+		mapScore *= 1 + (CSMaxMultiplier-1)*math.Pow((scoreCS-CSThreshold)/(10-CSThreshold), 1.2)
+	}
+
+	// AR bonus (high AR or low AR both reward the score)
+	arMult := computeARMult(scoreAR)
+
+	// OD-adjusted accuracy penalty
+	accPower := effectiveAccPower(scoreOD)
+
 	missCount := score.Statistics.CountMiss
-	accMult := math.Pow(score.Accuracy, AccuracyPower)
-	missPenalty := 1 + MissPenaltyFactor*math.Log10(float64(missCount)+1)
+	accMult := math.Pow(score.Accuracy, accPower)
+	missPenalty := 1 + MissPenaltyFactor*math.Sqrt(float64(missCount))
 	sliderScore := SliderFactor * attributes.SliderFactor
-	finalScore := mapScore * accMult / missPenalty * (1 / sliderScore)
+	finalScore := mapScore * arMult * accMult / missPenalty * (1 / sliderScore)
 
 	return ScoreResult{
 		AimScore:    aimScore,
@@ -59,6 +119,9 @@ func ComputeDetailed(attributes models.BeatmapAttributes, score models.Score) Sc
 		MapScore:    mapScore,
 		AccMult:     accMult,
 		MissPenalty: missPenalty,
+		ARMult:      arMult,
+		EffectiveAR: scoreAR,
+		EffectiveOD: scoreOD,
 		FinalScore:  finalScore,
 		MissCount:   missCount,
 	}
