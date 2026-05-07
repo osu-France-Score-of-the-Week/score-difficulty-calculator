@@ -78,3 +78,63 @@ func CalculateAll(entries []cache.CacheEntry, scoreByBeatmapID map[int]models.Sc
 	}
 	return results
 }
+
+// modSet converts a mods slice to a lookup map for O(1) presence checks.
+func modSet(mods []string) map[string]bool {
+	s := make(map[string]bool, len(mods))
+	for _, m := range mods {
+		s[m] = true
+	}
+	return s
+}
+
+func CalculateCSForMod(beatmap models.Beatmap, mods []string) float64 {
+	cs := beatmap.CS
+	m := modSet(mods)
+	// EZ and HR are mutually exclusive in osu!, but we apply in safe order anyway
+	if m["EZ"] {
+		cs *= 0.5
+	}
+	if m["HR"] {
+		cs = math.Min(cs*1.3, 10.0)
+	}
+	return cs
+}
+
+func CalculateODForMod(beatmap models.Beatmap, mods []string) float64 {
+	od := beatmap.OD
+	m := modSet(mods)
+	// 1. Apply base-value modifiers first
+	if m["EZ"] {
+		od *= 0.5
+	}
+	if m["HR"] {
+		od = math.Min(od*1.4, 10.0)
+	}
+	// 2. Apply speed modifier via time-domain conversion
+	if m["DT"] || m["NC"] {
+		od = CalculateMultipliedOD(od, DTMultiplier)
+	} else if m["HT"] {
+		od = CalculateMultipliedOD(od, HTMultiplier)
+	}
+	return od
+}
+
+func CalculateARForMod(beatmap models.Beatmap, mods []string) float64 {
+	ar := beatmap.AR
+	m := modSet(mods)
+	// 1. Apply base-value modifiers first
+	if m["EZ"] {
+		ar *= 0.5
+	}
+	if m["HR"] {
+		ar = math.Min(ar*1.4, 10.0)
+	}
+	// 2. Apply speed modifier via time-domain conversion
+	if m["DT"] || m["NC"] {
+		ar = CalculateMultipliedAR(ar, DTMultiplier)
+	} else if m["HT"] {
+		ar = CalculateMultipliedAR(ar, HTMultiplier)
+	}
+	return ar
+}

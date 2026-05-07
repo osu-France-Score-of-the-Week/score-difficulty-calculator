@@ -1,9 +1,12 @@
 package models
 
 type Beatmap struct {
-	ID      int    `json:"id"`
-	Version string `json:"version"`
-	Status  string `json:"status"`
+	ID      int     `json:"id"`
+	Version string  `json:"version"`
+	Status  string  `json:"status"`
+	CS      float64 `json:"cs"`
+	OD      float64 `json:"accuracy"`
+	AR      float64 `json:"ar"`
 }
 
 type BeatmapAttributesResponse struct {
