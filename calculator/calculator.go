@@ -21,14 +21,19 @@ const MissPenaltyFactor = 0.4
 // Higher values widen the gap between e.g. 95% and 99% accuracy.
 const AccuracyPower = 0.9
 
+// SliderFactor controls how much it increases API's slider score
+// Lower values = increase slider influence in score calculation
+const SliderFactor = 1
+
 type ScoreResult struct {
-	AimScore    float64
-	SpeedScore  float64
-	MapScore    float64
-	AccMult     float64
-	MissPenalty float64
-	FinalScore  float64
-	MissCount   int
+	AimScore     float64
+	SpeedScore   float64
+	MapScore     float64
+	AccMult      float64
+	MissPenalty  float64
+	SliderFactor float64
+	FinalScore   float64
+	MissCount    int
 }
 
 func ComputeMapScore(beatmapID int, mods []string, attributes models.BeatmapAttributes) float64 {
@@ -45,7 +50,8 @@ func ComputeDetailed(attributes models.BeatmapAttributes, score models.Score) Sc
 	missCount := score.Statistics.CountMiss
 	accMult := math.Pow(score.Accuracy, AccuracyPower)
 	missPenalty := 1 + MissPenaltyFactor*math.Log10(float64(missCount)+1)
-	finalScore := mapScore * accMult / missPenalty
+	sliderScore := SliderFactor * attributes.SliderFactor
+	finalScore := mapScore * accMult / missPenalty * (1 / sliderScore)
 
 	return ScoreResult{
 		AimScore:    aimScore,
