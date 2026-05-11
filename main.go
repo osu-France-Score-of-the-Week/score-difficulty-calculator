@@ -152,7 +152,7 @@ func main() {
 		if len(s.Mods) > 0 {
 			mods = strings.Join(s.Mods, ",")
 		}
-		fmt.Printf("#%-3d %-20s  %-50s  acc: %5.2f%%  pp: %6.2f  mods: %-10s  miss: %-4d  aim: %6.4f  speed: %6.4f  map: %.4f  acc_mult: %.4f  miss_pen: %.4f  total: %.4f\n",
+		fmt.Printf("#%-3d %-20s  %-50s  acc: %5.2f%%  pp: %6.2f  mods: %-10s  miss: %-4d  aim: %6.4f  speed: %6.4f  map: %.4f  acc_mult: %.4f  slider: %.4f  miss_pen: %.4f  total: %.4f\n",
 			i+1,
 			s.User.Username,
 			fmt.Sprintf("%s - %s [%s]", s.BeatmapSet.Artist, s.BeatmapSet.Title, s.Beatmap.Version),
@@ -164,6 +164,7 @@ func main() {
 			r.calc.SpeedScore,
 			r.calc.MapScore,
 			r.calc.AccMult,
+			r.calc.SliderScore,
 			r.calc.MissPenalty,
 			r.calc.FinalScore,
 		)

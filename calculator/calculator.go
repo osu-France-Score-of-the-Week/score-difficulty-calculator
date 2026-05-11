@@ -42,11 +42,20 @@ const SpeedMultiplier = 0.75
 
 const AimMultiplier = 1
 
+// AccuracyOnAimFactor controls how much accuracy affects aim scores (< 1 = less impact).
+// Speed maps reward accuracy more than aim maps.
+const AccuracyOnAimFactor = 0.5
+
+// MissOnSpeedFactor controls how much misses affect speed scores (< 1 = less impact).
+// Aim maps are more sensitive to misses than speed maps.
+const MissOnSpeedFactor = 0.5
+
 type ScoreResult struct {
 	AimScore    float64
 	SpeedScore  float64
 	MapScore    float64
 	AccMult     float64
+	SliderScore float64
 	MissPenalty float64
 	ARMult      float64
 	EffectiveAR float64
@@ -81,20 +90,14 @@ func effectiveAccPower(od float64) float64 {
 	return AccuracyPower
 }
 
-func ComputeMapScore(beatmapID int, mods []string, attributes models.BeatmapAttributes) float64 {
-	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Log10(attributes.AimDifficultStrainCount) * AimMultiplier
-	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Log10(attributes.SpeedDifficultStrainCount) * SpeedMultiplier
-	return 10.0 * math.Pow(math.Pow(aimScore, NormP)+math.Pow(speedScore, NormP), 1.0/NormP)
-}
-
 func ComputeDetailed(attributes models.BeatmapAttributes, score models.Score) ScoreResult {
 	scoreCS := CalculateCSForMod(score.Beatmap, score.Mods)
 	scoreOD := CalculateODForMod(score.Beatmap, score.Mods)
 	scoreAR := CalculateARForMod(score.Beatmap, score.Mods)
 
-	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Log10(attributes.AimDifficultStrainCount) * AimMultiplier
-	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Log10(attributes.SpeedDifficultStrainCount) * SpeedMultiplier
-	mapScore := 10.0 * math.Pow(math.Pow(aimScore, NormP)+math.Pow(speedScore, NormP), 1.0/NormP)
+	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Sqrt(max(attributes.AimDifficultStrainCount, 250)) * AimMultiplier
+	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Sqrt(max(attributes.SpeedDifficultStrainCount, 250)) * SpeedMultiplier
+	mapScore := math.Pow(math.Pow(aimScore, NormP)+math.Pow(speedScore, NormP), 1.0/NormP)
 
 	// CS bonus
 	if scoreCS >= CSThreshold {
@@ -108,17 +111,35 @@ func ComputeDetailed(attributes models.BeatmapAttributes, score models.Score) Sc
 	accPower := effectiveAccPower(scoreOD)
 
 	missCount := score.Statistics.CountMiss
-	accMult := math.Pow(score.Accuracy, accPower)
-	missPenalty := 1 + MissPenaltyFactor*math.Sqrt(float64(missCount))
-	sliderScore := SliderFactor * attributes.SliderFactor
-	finalScore := mapScore * arMult * accMult / missPenalty * (1 / sliderScore)
+	
+	// Apply accuracy penalty with reduced impact on aim maps
+	aimAccMult := math.Pow(score.Accuracy, accPower*AccuracyOnAimFactor)
+	
+	// Apply accuracy penalty with normal impact on speed maps
+	speedAccMult := math.Pow(score.Accuracy, accPower)
+	
+	// Apply miss penalty with normal impact on aim maps
+	aimMissPenalty := 1 + MissPenaltyFactor*math.Sqrt(float64(missCount))
+	
+	// Apply miss penalty with reduced impact on speed maps
+	speedMissPenalty := 1 + MissPenaltyFactor*MissOnSpeedFactor*math.Sqrt(float64(missCount))
+	
+	sliderScore := math.Sqrt(SliderFactor * attributes.SliderFactor)
+	
+	// Calculate component-specific scores with their respective penalties
+	finalAimScore := aimScore * aimAccMult / aimMissPenalty
+	finalSpeedScore := speedScore * speedAccMult / speedMissPenalty
+	
+	// Combine components and apply global multipliers
+	finalScore := math.Pow(math.Pow(finalAimScore, NormP)+math.Pow(finalSpeedScore, NormP), 1.0/NormP) * arMult / sliderScore
 
 	return ScoreResult{
 		AimScore:    aimScore,
 		SpeedScore:  speedScore,
 		MapScore:    mapScore,
-		AccMult:     accMult,
-		MissPenalty: missPenalty,
+		AccMult:     (aimAccMult + speedAccMult) / 2,
+		SliderScore: sliderScore,
+		MissPenalty: (aimMissPenalty + speedMissPenalty) / 2,
 		ARMult:      arMult,
 		EffectiveAR: scoreAR,
 		EffectiveOD: scoreOD,
