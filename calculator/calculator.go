@@ -123,10 +123,10 @@ func effectiveAccPower(od float64) float64 {
 	return AccuracyPower
 }
 
-func ComputeDetailed(attributes models.BeatmapAttributes, score models.Score) ScoreResult {
-	scoreCS := CalculateCSForMod(score.Beatmap, score.Mods)
-	scoreOD := CalculateODForMod(score.Beatmap, score.Mods)
-	scoreAR := CalculateARForMod(score.Beatmap, score.Mods)
+func Compute(attributes models.BeatmapAttributes, score models.Score, beatmap models.Beatmap) (float64, ScoreResult) {
+	scoreCS := CalculateCSForMod(beatmap, score.Mods)
+	scoreOD := CalculateODForMod(beatmap, score.Mods)
+	scoreAR := CalculateARForMod(beatmap, score.Mods)
 
 	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Sqrt(max(attributes.AimDifficultStrainCount, 500)) * AimMultiplier
 	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Sqrt(max(attributes.SpeedDifficultStrainCount, 250)) * SpeedMultiplier
@@ -170,7 +170,7 @@ func ComputeDetailed(attributes models.BeatmapAttributes, score models.Score) Sc
 	// Calculate final score
 	finalScore := mapScore * accMult * odMult / missPenalty / sliderScore
 
-	return ScoreResult{
+	return finalScore, ScoreResult{
 		AimScore:    aimScore,
 		SpeedScore:  speedScore,
 		MapScore:    mapScore,
@@ -195,7 +195,7 @@ func CalculateAll(entries []cache.CacheEntry, scoreByBeatmapID map[int]models.Sc
 		if !ok {
 			continue
 		}
-		results[entry.BeatmapID] = ComputeDetailed(entry.Attributes, s)
+		_, results[entry.BeatmapID] = Compute(entry.Attributes, s, s.Beatmap)
 	}
 	return results
 }
