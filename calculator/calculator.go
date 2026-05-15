@@ -2,6 +2,7 @@ package calculator
 
 import (
 	"math"
+	"log"
 	"score-difficulty-calculator/cache"
 	"score-difficulty-calculator/models"
 )
@@ -64,6 +65,13 @@ type ScoreResult struct {
 	MissCount   int
 }
 
+func finiteOrZero(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return value
+}
+
 // arMult returns a bonus multiplier based on effective AR.
 // Low AR (< 9): harder to read (screen clutter) → exponential bonus, max at AR 0.
 // High AR (> 10.5): harder to read (objects too fast) → linear bonus, max at AR 11.
@@ -124,13 +132,56 @@ func effectiveAccPower(od float64) float64 {
 }
 
 func Compute(attributes models.BeatmapAttributes, score models.Score, beatmap models.Beatmap) (float64, ScoreResult) {
+	log.Printf(
+		"[calc] compute start beatmap=%d score=%d acc=%.6f pp=%.2f cs=%.2f od=%.2f ar=%.2f max_combo=%d mods=%v stats=%+v attrs={star=%.3f aim=%.3f speed=%.3f slider=%.3f aim_strain=%.3f speed_strain=%.3f}",
+		beatmap.ID,
+		score.ID,
+		score.Accuracy,
+		score.PP,
+		beatmap.CS,
+		beatmap.OD,
+		beatmap.AR,
+		attributes.MaxCombo,
+		score.Mods,
+		score.Statistics,
+		attributes.StarRating,
+		attributes.AimDifficulty,
+		attributes.SpeedDifficulty,
+		attributes.SliderFactor,
+		attributes.AimDifficultStrainCount,
+		attributes.SpeedDifficultStrainCount,
+	)
+
+	if math.IsNaN(score.Accuracy) || math.IsInf(score.Accuracy, 0) || score.Accuracy < 0 {
+		log.Printf("[calc] invalid accuracy beatmap=%d score=%d acc=%v", beatmap.ID, score.ID, score.Accuracy)
+		return 0, ScoreResult{}
+	}
+
 	scoreCS := CalculateCSForMod(beatmap, score.Mods)
 	scoreOD := CalculateODForMod(beatmap, score.Mods)
 	scoreAR := CalculateARForMod(beatmap, score.Mods)
+	scoreCS = finiteOrZero(scoreCS)
+	scoreOD = finiteOrZero(scoreOD)
+	scoreAR = finiteOrZero(scoreAR)
 
 	aimScore := math.Pow(attributes.AimDifficulty, 2) / 10 * math.Sqrt(max(attributes.AimDifficultStrainCount, 500)) * AimMultiplier
 	speedScore := math.Pow(attributes.SpeedDifficulty, 2) / 10 * math.Sqrt(max(attributes.SpeedDifficultStrainCount, 250)) * SpeedMultiplier
 	mapScore := math.Pow(math.Pow(aimScore, NormP)+math.Pow(speedScore, NormP), 1.0/NormP)
+	aimScore = finiteOrZero(aimScore)
+	speedScore = finiteOrZero(speedScore)
+	mapScore = finiteOrZero(mapScore)
+	if mapScore == 0 {
+		log.Printf("[calc] zero mapScore beatmap=%d score=%d aim=%.6f speed=%.6f", beatmap.ID, score.ID, aimScore, speedScore)
+		return 0, ScoreResult{
+			AimScore:    aimScore,
+			SpeedScore:  speedScore,
+			MapScore:    mapScore,
+			ARMult:      computeARMult(scoreAR),
+			EffectiveAR: scoreAR,
+			EffectiveOD: scoreOD,
+			MissCount:   score.Statistics.CountMiss,
+		}
+	}
 
 	// Apply map stat bonuses
 	csMult := computeCSMult(scoreCS)
@@ -140,6 +191,18 @@ func Compute(attributes models.BeatmapAttributes, score models.Score, beatmap mo
 
 	// Calculate aim/speed ratio to modulate penalties
 	totalDiff := aimScore + speedScore
+	if totalDiff <= 0 {
+		log.Printf("[calc] non-positive totalDiff beatmap=%d score=%d aim=%.6f speed=%.6f", beatmap.ID, score.ID, aimScore, speedScore)
+		return 0, ScoreResult{
+			AimScore:    aimScore,
+			SpeedScore:  speedScore,
+			MapScore:    mapScore,
+			ARMult:      arMult,
+			EffectiveAR: scoreAR,
+			EffectiveOD: scoreOD,
+			MissCount:   score.Statistics.CountMiss,
+		}
+	}
 	aimRatio := aimScore / totalDiff
 	speedRatio := speedScore / totalDiff
 
@@ -157,6 +220,9 @@ func Compute(attributes models.BeatmapAttributes, score models.Score, beatmap mo
 
 	// Normalize miss count by map length (combo)
 	maxCombo := float64(attributes.MaxCombo)
+	if maxCombo <= 0 {
+		maxCombo = 1
+	}
 	missRatio := float64(missCount) / maxCombo
 
 	// Modulated miss penalty: less impact on speed-heavy maps
@@ -166,9 +232,29 @@ func Compute(attributes models.BeatmapAttributes, score models.Score, beatmap mo
 	missPenalty := 1 + modulatedMissImpact
 
 	sliderScore := math.Sqrt(SliderFactor * attributes.SliderFactor)
+	sliderScore = finiteOrZero(sliderScore)
 
 	// Calculate final score
 	finalScore := mapScore * accMult * odMult / missPenalty / sliderScore
+	finalScore = finiteOrZero(finalScore)
+	log.Printf(
+		"[calc] result beatmap=%d score=%d final=%.6f aim=%.6f speed=%.6f map=%.6f cs_mult=%.6f ar_mult=%.6f acc_mult=%.6f od_mult=%.6f miss_pen=%.6f slider=%.6f eff_ar=%.6f eff_od=%.6f misses=%d",
+		beatmap.ID,
+		score.ID,
+		finalScore,
+		aimScore,
+		speedScore,
+		mapScore,
+		csMult,
+		arMult,
+		accMult,
+		odMult,
+		missPenalty,
+		sliderScore,
+		scoreAR,
+		scoreOD,
+		missCount,
+	)
 
 	return finalScore, ScoreResult{
 		AimScore:    aimScore,
@@ -201,15 +287,17 @@ func CalculateAll(entries []cache.CacheEntry, scoreByBeatmapID map[int]models.Sc
 }
 
 // modSet converts a mods slice to a lookup map for O(1) presence checks.
-func modSet(mods []string) map[string]bool {
+func modSet(mods models.Mods) map[string]bool {
 	s := make(map[string]bool, len(mods))
 	for _, m := range mods {
-		s[m] = true
+		if m.Acronym != "" {
+			s[m.Acronym] = true
+		}
 	}
 	return s
 }
 
-func CalculateCSForMod(beatmap models.Beatmap, mods []string) float64 {
+func CalculateCSForMod(beatmap models.Beatmap, mods models.Mods) float64 {
 	cs := beatmap.CS
 	m := modSet(mods)
 	// EZ and HR are mutually exclusive in osu!, but we apply in safe order anyway
@@ -222,7 +310,7 @@ func CalculateCSForMod(beatmap models.Beatmap, mods []string) float64 {
 	return cs
 }
 
-func CalculateODForMod(beatmap models.Beatmap, mods []string) float64 {
+func CalculateODForMod(beatmap models.Beatmap, mods models.Mods) float64 {
 	od := beatmap.OD
 	m := modSet(mods)
 	// 1. Apply base-value modifiers first
@@ -241,7 +329,7 @@ func CalculateODForMod(beatmap models.Beatmap, mods []string) float64 {
 	return od
 }
 
-func CalculateARForMod(beatmap models.Beatmap, mods []string) float64 {
+func CalculateARForMod(beatmap models.Beatmap, mods models.Mods) float64 {
 	ar := beatmap.AR
 	m := modSet(mods)
 	// 1. Apply base-value modifiers first
