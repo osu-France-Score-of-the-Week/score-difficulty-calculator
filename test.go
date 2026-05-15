@@ -45,7 +45,7 @@ func loadScores() (map[int]models.Score, error) {
 	return scores, nil
 }
 
-func main() {
+func test() {
 	skipFetch := flag.Bool("skip-fetch", false, "Skip fetching pinned scores and map attributes, use cached data")
 	flag.Parse()
 
